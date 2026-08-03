@@ -29,6 +29,9 @@ These rules apply to Solidity contracts, libraries, interfaces, scripts, and tes
 | Gas report | `forge test --gas-report` |
 | Regenerate one fixture by hand | `node test/fixtures/load-fixture.mjs test/fixtures/sample-jwt.json` |
 | Preview a key sync without sending | `VERIFIER_ADDRESS=0x… RPC_URL=… DRY_RUN=true ./sync-github-keys.sh` |
+| Check tooling and deployment | `./bin/identity doctor` |
+| Deploy both contracts | `./bin/identity deploy --rpc-url …` |
+| Inspect a deployment | `./bin/identity status` |
 
 ## Repository Structure
 
@@ -46,6 +49,8 @@ These rules apply to Solidity contracts, libraries, interfaces, scripts, and tes
 - `.github/workflows/sync-github-keys.yml`: scheduled mirror of GitHub's JWKS into the verifier.
 - `.github/workflows/test-contracts.yml`: `forge fmt --check`, `forge build --sizes`, `forge test -vvv`.
 - `sync-github-keys.sh`: the key sync itself, driven by `cast`. Runnable locally against anvil.
+- `bin/identity`: deployment helper CLI. Ruby 3.2, standard library only, no bundler.
+- `tools/identity/`: its implementation. Deliberately not under `lib/`, which Foundry owns.
 - `script/`: Foundry deploy scripts.
 - `lib/`: git submodules. Do not edit directly.
 
@@ -65,6 +70,10 @@ These rules apply to Solidity contracts, libraries, interfaces, scripts, and tes
 - Revoking a key GitHub has just dropped can reject an OIDC token that is still inside its validity window. That is acceptable because tokens are short-lived and a user can simply open another issue, but it is why revocation is switchable.
 - The registry is not enumerable, so reconciliation reconstructs the set of known kids from `KeyAdded` logs. Adding a getter for that set would be a contract change; do not assume one exists.
 - Any workflow in this repository that opens an issue also triggers `register.yml`. The parse step classifies a non-address title as `skip`, so it is harmless, but keep that in mind before adding issue-opening automation.
+- `bin/identity` depends on nothing but Ruby's standard library, forge, cast and gh. Do not add a Gemfile; a contracts repository should not require a second package manager to deploy.
+- The helper never writes a private key to `.identity.yml`. Keys come from the environment or a no-echo prompt on each run, which is what keeps that file safe to leave in a working tree.
+- `Shell` always passes an argv array, never a command string, so a configured value can never become shell syntax. Keep it that way.
+- The attestation repository id and `job_workflow_ref` are derived from the checkout rather than typed, because a hand-assembled ref is the easiest way to deploy a UIK that rejects every proof. `gh repo view` does not expose the numeric id, so it comes from `gh api repos/{owner}/{repo}`.
 - `UIK` is soulbound. The only way a token moves is a fresh OIDC proof through `_bind`. Do not add a holder-initiated transfer path.
 - `.github/workflows/register.yml` is pinned on-chain through `job_workflow_ref`. Renaming the file, moving it, or changing its ref requires an owner transaction on the deployed `UIK`. Treat edits to it as a protocol change.
 - The issue title is untrusted input. Never interpolate `${{ github.event.issue.title }}` into a `run:` block; pass it through `env:` and validate it.

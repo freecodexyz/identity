@@ -92,6 +92,28 @@ Tests sign real RSA JWTs through `test/fixtures/load-fixture.mjs` under `vm.ffi`
 
 ## Deploying
 
+`bin/identity` wraps the whole thing. It needs Ruby 3.2, `forge`, `cast` and an authenticated `gh` — no bundler, no gems.
+
+```shell
+./bin/identity doctor                          # tooling, credentials, current state
+./bin/identity deploy --rpc-url "$RPC_URL"     # verifier, then UIK, wired together
+./bin/identity configure --dry-run             # preview the repository variables
+./bin/identity configure                       # write them, plus the key sync secret
+./bin/identity keys sync                       # mirror GitHub's signing keys
+./bin/identity status                          # verify it all lines up
+```
+
+The addresses, RPC and deploy block are remembered in `.identity.yml`, so nothing has to be re-exported between commands. The deployer key is read from `IDENTITY_PRIVATE_KEY`, or prompted for without echo, and is never written to that file.
+
+Two values are derived from the checkout rather than typed, because a hand-assembled `job_workflow_ref` is the easiest way to deploy a UIK that rejects every proof:
+
+- the attestation repository id, from `gh api repos/{owner}/{repo}`
+- the workflow ref, as `OWNER/REPO/.github/workflows/register.yml@refs/heads/<default branch>`
+
+`status` re-reads both from the chain and compares them against the repository, so a drifted deployment is visible rather than silent.
+
+The underlying Foundry scripts remain the source of truth and can be run directly:
+
 ```shell
 PRIVATE_KEY=... forge script script/DeployGithubOidcVerifier.s.sol --rpc-url "$RPC_URL" --broadcast
 
