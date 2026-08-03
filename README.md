@@ -12,6 +12,10 @@ At the foundation is the **User Identity Key** (**UIK**), a soulbound ERC-721 wh
 
 Where a repository identity proves _who owns this code_, a user identity proves _who this developer is_. It is the primitive underneath contributor reputation, payouts to people rather than projects, and any protocol action that should be attributable to a human.
 
+## Reporting a problem
+
+This repository takes bug reports and security reports only. **Security vulnerabilities go privately to [paoloanzn@gmail.com](mailto:paoloanzn@gmail.com) — never through an issue or a pull request.** See [CONTRIBUTING.md](./CONTRIBUTING.md), which also explains why a bug report's title must not begin with `0x`.
+
 ## Registering
 
 One click. No repository to fork, no file to commit, no app to install, no scope to grant, no gas to pay.
@@ -123,10 +127,6 @@ ATTESTATION_REPO_ID=... \
 JOB_WORKFLOW_REF="freecodexyz/identity/.github/workflows/register.yml@refs/heads/main" \
   forge script script/DeployUIK.s.sol --rpc-url "$RPC_URL" --broadcast
 ```
-
-## Reporting a problem
-
-This repository takes bug reports and security reports only. **Security vulnerabilities go privately to [paoloanzn@gmail.com](mailto:paoloanzn@gmail.com) — never through an issue or a pull request.** See [CONTRIBUTING.md](./CONTRIBUTING.md), which also explains why a bug report's title must not begin with `0x`.
 
 ## Keeping the signing keys current
 
