@@ -30,12 +30,15 @@ These rules apply to Solidity contracts, libraries, interfaces, scripts, and tes
 
 ## Repository Structure
 
-- `src/UIK.sol`: soulbound identity ERC-721 and the T2 claim checks.
+- `src/UIK.sol`: soulbound identity ERC-721, the T2 claim checks, and on-chain metadata.
 - `src/GithubOidcVerifier.sol`: GitHub JWKS mirror, RSA signature, issuer, and active-window checks.
 - `src/IJwtVerifier.sol`: verifier boundary consumed by `UIK`.
+- `src/ITokenRenderer.sol`: swappable metadata renderer boundary.
+- `src/IERC5192.sol`: minimal soulbound interface; OpenZeppelin does not ship one.
 - `src/JsonClaim.sol`: byte-oriented JSON claim matcher.
-- `test/OidcFixture.sol`: shared loader for generated OIDC fixtures.
+- `test/OidcFixture.sol`: shared loader for generated OIDC fixtures and token URI decoding.
 - `test/fixtures/load-fixture.mjs`: deterministic JWT generator invoked through `vm.ffi`.
+- `test/fixtures/decode-token-uri.mjs`: decodes and `JSON.parse`s a token URI for assertions.
 - `test/fixtures/*.json`: one file per scenario; negative cases are data, not code.
 - `.github/workflows/register.yml`: the attestation workflow pinned on-chain by `UIK`.
 - `.github/workflows/test-contracts.yml`: `forge fmt --check`, `forge build --sizes`, `forge test -vvv`.
@@ -54,6 +57,13 @@ These rules apply to Solidity contracts, libraries, interfaces, scripts, and tes
 - `UIK` is soulbound. The only way a token moves is a fresh OIDC proof through `_bind`. Do not add a holder-initiated transfer path.
 - `.github/workflows/register.yml` is pinned on-chain through `job_workflow_ref`. Renaming the file, moving it, or changing its ref requires an owner transaction on the deployed `UIK`. Treat edits to it as a protocol change.
 - The issue title is untrusted input. Never interpolate `${{ github.event.issue.title }}` into a `run:` block; pass it through `env:` and validate it.
+- The stored `login` is display-only and never an identifier. It is proven with `requireStringClaim` against the signed `actor` claim rather than parsed out of the payload, which keeps `JsonClaim` assert-only. Do not add a value-extracting parser to get it.
+- `login` is interpolated into metadata JSON and into a profile URL, so `_requireRenderableLogin` must keep rejecting anything outside `[A-Za-z0-9-]`. Loosening it allows trait injection and URL manipulation.
+- Metadata is served on-chain so that what a client displays rests on the same guarantees as the binding. Do not introduce an HTTP `_baseURI()`.
+- The ERC-4906 interface id must stay hardcoded as `0x49064906`. `type(IERC4906).interfaceId` is zero, because the ERC declares only events.
+- `tokenURI` is a view function and reaches a renderer through a staticcall. A renderer must be treated as untrusted: no code, a revert, gas exhaustion, and state writes all have to fall back to the built-in renderer rather than propagate.
+- Renderer authority is display-only. It must never be able to mint, move, or unbind an identity. `freezeRenderer` gives it up permanently and deliberately leaves the attestation source mutable, because the pinned workflow still has to be rotatable.
+- `_defaultTokenURI` builds its JSON in two halves on purpose. A single long `string.concat` exhausts the stack when the optimizer is enabled without via-ir.
 
 ## Solidity code rules
 

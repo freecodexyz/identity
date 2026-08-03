@@ -20,6 +20,7 @@ abstract contract OidcFixture is Test {
         bytes modulus;
         bytes exponent;
         address wallet;
+        string login;
         uint256 userId;
         uint256 repoId;
         string jobWorkflowRef;
@@ -53,6 +54,34 @@ abstract contract OidcFixture is Test {
         f = _runFixture(inputs);
     }
 
+    /// @dev Loads `name`, additionally overriding the `actor` login the token is issued for.
+    function _fixture(string memory name, uint256 userId, address wallet, uint256 repoId, string memory login)
+        internal
+        returns (Fixture memory f)
+    {
+        string[] memory inputs = new string[](7);
+        inputs[0] = "node";
+        inputs[1] = "test/fixtures/load-fixture.mjs";
+        inputs[2] = string.concat("test/fixtures/", name);
+        inputs[3] = vm.toString(userId);
+        inputs[4] = vm.toString(wallet);
+        inputs[5] = vm.toString(repoId);
+        inputs[6] = login;
+
+        f = _runFixture(inputs);
+    }
+
+    /// @dev Decodes a base64 JSON token URI, proving it parses, and returns it for `vm.parseJson*`.
+    ///      `attributes` are flattened to `trait_<trait_type>` keys.
+    function _decodeTokenURI(string memory uri) internal returns (string memory) {
+        string[] memory inputs = new string[](3);
+        inputs[0] = "node";
+        inputs[1] = "test/fixtures/decode-token-uri.mjs";
+        inputs[2] = uri;
+
+        return string(vm.ffi(inputs));
+    }
+
     function _runFixture(string[] memory inputs) private returns (Fixture memory f) {
         string memory json = string(vm.ffi(inputs));
         f.kid = vm.parseJsonBytes32(json, ".kid");
@@ -62,6 +91,7 @@ abstract contract OidcFixture is Test {
         f.modulus = vm.parseJsonBytes(json, ".modulus");
         f.exponent = vm.parseJsonBytes(json, ".exponent");
         f.wallet = vm.parseJsonAddress(json, ".wallet");
+        f.login = vm.parseJsonString(json, ".login");
         f.userId = vm.parseJsonUint(json, ".userId");
         f.repoId = vm.parseJsonUint(json, ".repoId");
         f.jobWorkflowRef = vm.parseJsonString(json, ".jobWorkflowRef");

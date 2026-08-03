@@ -4,7 +4,7 @@
 // `vm.ffi`, it signs a realistic token payload with a throwaway RSA key and prints the pieces the
 // contracts need, hex-encoded so `vm.ffi` returns them as bytes.
 //
-// Usage: node test/fixtures/load-fixture.mjs <fixture.json> [actorId] [wallet] [repoId]
+// Usage: node test/fixtures/load-fixture.mjs <fixture.json> [actorId] [wallet] [repoId] [login]
 //
 // Every field of the payload is driven by the fixture file so negative cases stay data rather than
 // code. See test/fixtures/*.json.
@@ -63,6 +63,7 @@ const fixture = JSON.parse(readFileSync(process.argv[2], "utf8"));
 const actorId = String(process.argv[3] ?? fixture.actorId);
 const wallet = String(process.argv[4] ?? fixture.wallet).toLowerCase();
 const repoId = String(process.argv[5] ?? fixture.repoId);
+const login = String(process.argv[6] ?? fixture.login ?? "octocat");
 
 const iss = fixture.iss ?? DEFAULT_ISS;
 const exp = fixture.exp ?? 4102444800;
@@ -95,7 +96,7 @@ const payload = {
   repository_id: repoId,
   repository_owner_id: "1",
   repository_visibility: "public",
-  actor: "octocat",
+  actor: login,
   actor_id: actorId,
   run_id: "1",
   run_number: "1",
@@ -122,6 +123,7 @@ const output = JSON.stringify({
   modulus: b64urlToHex(publicJwk.n),
   exponent: b64urlToHex(publicJwk.e),
   wallet,
+  login,
   iss,
   userId: Number(actorId),
   repoId: Number(repoId),

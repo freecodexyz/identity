@@ -76,7 +76,7 @@ contract UIKSoulbound_Invariant is OidcFixture {
 
         Fixture memory f = _fixture("sample-jwt.json");
         verifier.addKey(f.kid, f.modulus, f.exponent);
-        uik.register(f.kid, f.headerB64, f.payloadB64, f.signature, USER_ID, alice);
+        uik.register(f.kid, f.headerB64, f.payloadB64, f.signature, USER_ID, alice, f.login);
 
         handler = new UIKSoulboundHandler(uik, USER_ID, alice);
         targetContract(address(handler));

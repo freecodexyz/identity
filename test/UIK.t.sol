@@ -38,7 +38,12 @@ contract UIK_T is OidcFixture {
     }
 
     function _register(Fixture memory f, uint256 userId, address wallet) internal {
-        uik.register(f.kid, f.headerB64, f.payloadB64, f.signature, userId, wallet);
+        uik.register(f.kid, f.headerB64, f.payloadB64, f.signature, userId, wallet, f.login);
+    }
+
+    /// @dev Registers with a login the caller chooses, rather than the one the token attests.
+    function _registerAs(Fixture memory f, uint256 userId, address wallet, string memory login) internal {
+        uik.register(f.kid, f.headerB64, f.payloadB64, f.signature, userId, wallet, login);
     }
 
     /// @dev Loads the happy-path fixture and installs its signing key.
@@ -52,6 +57,14 @@ contract UIK_T is OidcFixture {
         returns (Fixture memory f)
     {
         f = _fixture(name, userId, wallet, repoId);
+        _addKey(f);
+    }
+
+    function _ready(string memory name, uint256 userId, address wallet, uint256 repoId, string memory login)
+        internal
+        returns (Fixture memory f)
+    {
+        f = _fixture(name, userId, wallet, repoId, login);
         _addKey(f);
     }
 
@@ -163,6 +176,7 @@ contract UIK_T is OidcFixture {
         UIK.Identity memory identity = uik.identityOf(USER_ID);
         assertEq(identity.githubUserId, USER_ID);
         assertEq(identity.boundAt, 1_700_000_000);
+        assertEq(identity.login, "octocat");
     }
 
     function test_RegisterMarksProofUsed() public {
@@ -217,6 +231,70 @@ contract UIK_T is OidcFixture {
         _register(f, USER_ID + 1, alice);
     }
 
+    /// @dev The login is display-only, but it is still proven rather than trusted from the caller.
+    function test_RejectsLoginMismatch() public {
+        Fixture memory f = _ready("sample-jwt.json");
+
+        vm.expectRevert(abi.encodeWithSelector(JsonClaim.ClaimMismatch.selector, "actor"));
+        _registerAs(f, USER_ID, alice, "not-octocat");
+    }
+
+    function testFuzz_RejectsAnyLoginButTheAttestedOne(string calldata login) public {
+        Fixture memory f = _ready("sample-jwt.json");
+        vm.assume(keccak256(bytes(login)) != keccak256(bytes(f.login)));
+
+        vm.expectRevert(abi.encodeWithSelector(JsonClaim.ClaimMismatch.selector, "actor"));
+        _registerAs(f, USER_ID, alice, login);
+    }
+
+    /// @dev A login carrying a quote is escaped in the signed payload, so the claim matcher rejects
+    ///      it before the charset check ever runs. {UIK-_requireRenderableLogin} is the second line.
+    function test_RejectsLoginWithQuoteAtClaimCheck() public {
+        Fixture memory f = _ready("quoted-login-jwt.json");
+
+        vm.expectRevert(abi.encodeWithSelector(JsonClaim.ClaimMismatch.selector, "actor"));
+        _register(f, USER_ID, alice);
+    }
+
+    /// @dev A slash survives JSON encoding, so it satisfies the claim check and must be caught by
+    ///      the charset validation. Left unchecked it would corrupt the metadata profile URL.
+    function test_RejectsUnrenderableLogin() public {
+        Fixture memory f = _ready("bad-login-jwt.json");
+
+        vm.expectRevert(UIK.InvalidLogin.selector);
+        _register(f, USER_ID, alice);
+    }
+
+    function test_RejectsEmptyLogin() public {
+        Fixture memory f = _ready("empty-login-jwt.json");
+
+        vm.expectRevert(UIK.InvalidLogin.selector);
+        _register(f, USER_ID, alice);
+    }
+
+    function test_RejectsOverlongLogin() public {
+        Fixture memory f = _ready("long-login-jwt.json");
+
+        vm.expectRevert(UIK.InvalidLogin.selector);
+        _register(f, USER_ID, alice);
+    }
+
+    function test_AcceptsMaximumLengthLogin() public {
+        string memory login = "aaaaaaaaaabbbbbbbbbbccccccccccddddddddd";
+        assertEq(bytes(login).length, 39);
+        Fixture memory f = _ready("sample-jwt.json", USER_ID, alice, ATTESTATION_REPO_ID, login);
+
+        _register(f, USER_ID, alice);
+        assertEq(uik.identityOf(USER_ID).login, login);
+    }
+
+    function test_AcceptsHyphensAndDigits() public {
+        Fixture memory f = _ready("sample-jwt.json", USER_ID, alice, ATTESTATION_REPO_ID, "oct-0-cat-9");
+
+        _register(f, USER_ID, alice);
+        assertEq(uik.identityOf(USER_ID).login, "oct-0-cat-9");
+    }
+
     /// @dev Without the `repository_id` pin, anyone could call the attestation workflow as a
     ///      reusable workflow from their own repository and choose the audience.
     function test_RejectsForeignRepository() public {
@@ -248,7 +326,7 @@ contract UIK_T is OidcFixture {
         Fixture memory f = _ready("sample-jwt.json");
 
         vm.expectRevert(UIK.AttestationSourceNotConfigured.selector);
-        fresh.register(f.kid, f.headerB64, f.payloadB64, f.signature, USER_ID, alice);
+        fresh.register(f.kid, f.headerB64, f.payloadB64, f.signature, USER_ID, alice, f.login);
     }
 
     function test_RejectsWhenWorkflowRefUnset() public {
@@ -257,7 +335,7 @@ contract UIK_T is OidcFixture {
         Fixture memory f = _ready("sample-jwt.json");
 
         vm.expectRevert(UIK.AttestationSourceNotConfigured.selector);
-        fresh.register(f.kid, f.headerB64, f.payloadB64, f.signature, USER_ID, alice);
+        fresh.register(f.kid, f.headerB64, f.payloadB64, f.signature, USER_ID, alice, f.login);
     }
 
     /// @dev The whole claim matcher rests on JSON escaping `"` inside values. A workflow name

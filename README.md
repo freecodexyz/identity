@@ -42,11 +42,41 @@ The address comes from the **issue title**, which is publicly and permanently at
 
 Because the proof names its own beneficiary through `aud`, `register` is permissionless: a relayer can pay the gas without being able to redirect the identity, and anyone can broadcast a proof they hold.
 
+## Metadata
+
+Metadata is served fully on-chain as a base64 `data:` URI, so what a wallet displays rests on the same guarantees as the binding itself rather than on a server that could say anything.
+
+```json
+{
+  "name": "@octocat",
+  "description": "User Identity Key. Proves that GitHub account 583231 controls this wallet, through a GitHub Actions OIDC attestation.",
+  "image": "https://avatars.githubusercontent.com/u/583231",
+  "external_url": "https://github.com/octocat",
+  "attributes": [
+    { "trait_type": "GitHub User ID", "value": "583231" },
+    { "trait_type": "Login At Binding", "value": "octocat" },
+    { "trait_type": "Bound Wallet", "value": "0x1111111111111111111111111111111111111111" },
+    { "display_type": "date", "trait_type": "Bound At", "value": 1754000000 }
+  ]
+}
+```
+
+The image needs no stored value: GitHub serves avatars by account id, which is the token id. The login is recorded only for the name and the profile link, because GitHub has no id-addressable profile page — it is proven against the signed `actor` claim, refreshed on every rebinding, and never used as an identifier.
+
+Two extensions matter here:
+
+- **ERC-4906.** Rebinding changes the holder, the timestamp and possibly the login, so the contract emits `MetadataUpdate` to stop marketplaces serving a stale render forever.
+- **ERC-5192.** The token reports `locked() == true`, so clients hide transfer controls instead of offering an action that always reverts.
+
+Rendering is delegated to a swappable `ITokenRenderer`, falling back to the built-in renderer whenever none is set or a renderer misbehaves. That authority is display-only — it can never mint, move, or unbind an identity — and it can be given up permanently with `freezeRenderer()`, which deliberately leaves the attestation source rotatable.
+
 ## Contracts
 
 - `src/UIK.sol`: soulbound identity ERC-721. Token id is the GitHub account id.
 - `src/GithubOidcVerifier.sol`: mirrors GitHub's JWKS and verifies the RSA signature, issuer, and active window.
 - `src/IJwtVerifier.sol`: the verifier boundary `UIK` consumes.
+- `src/ITokenRenderer.sol`: the swappable metadata renderer boundary.
+- `src/IERC5192.sol`: minimal soulbound interface.
 - `src/JsonClaim.sol`: byte-oriented JSON claim matcher.
 
 ## Development
