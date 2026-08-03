@@ -14,7 +14,9 @@ Where a repository identity proves _who owns this code_, a user identity proves 
 
 ## Reporting a problem
 
-This repository takes bug reports and security reports only. **Security vulnerabilities go privately to [paoloanzn@gmail.com](mailto:paoloanzn@gmail.com) — never through an issue or a pull request.** See [CONTRIBUTING.md](./CONTRIBUTING.md), which also explains why a bug report's title must not begin with `0x`.
+This repository takes bug reports and security reports only.
+
+**Security vulnerabilities must be reported privately — never through an issue or a pull request.** [SECURITY.md](./SECURITY.md) has the contact address and the scope. [CONTRIBUTING.md](./CONTRIBUTING.md) covers everything else, including why a bug report's title must not begin with `0x`.
 
 ## Registering
 

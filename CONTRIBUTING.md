@@ -6,20 +6,11 @@ It is not open to feature requests, refactors, documentation rewrites, or unsoli
 
 ## Reporting a security vulnerability
 
-**Email [paoloanzn@gmail.com](mailto:paoloanzn@gmail.com). Do not open an issue, a pull request, or a discussion.**
+**Report it privately. Never through an issue, a pull request, or a discussion.**
 
-Never disclose a vulnerability publicly before it has been fixed. That includes this repository's issue tracker, pull requests, forks, commit messages, and anywhere else public — social media, chat groups, write-ups, and conference talks included. A public report on this codebase is not a disclosure of a theoretical weakness: `UIK` binds real GitHub accounts to real wallets, and anything that lets one account's identity be minted to another party's address is directly exploitable the moment it is known.
+[SECURITY.md](./SECURITY.md) is the policy: where to send it, what to include, and what is in and out of scope.
 
-Please include whatever you have:
-
-- the contract and file, and the commit or deployed address it applies to
-- what an attacker gains, and what they need in order to do it
-- the smallest reproduction you can manage, ideally a failing Foundry test
-- the chain and transaction hash, if you observed it against a live deployment
-
-You will get a reply confirming receipt. Please allow time for a fix before considering any further disclosure, and coordinate the timing in that thread.
-
-Reports about GitHub itself — the OIDC issuer, the JWKS endpoint, the Actions platform — belong to [GitHub's own program](https://bounty.github.com), not here.
+Do not disclose anywhere public before a fix exists — that includes forks, commit messages, social media, write-ups, and talks. A public report on this codebase is not a theoretical weakness: `UIK` binds real GitHub accounts to real wallets, and anything that lets one account's identity be minted to an address that account does not control is directly exploitable the moment it is known.
 
 ## Reporting a bug
 
