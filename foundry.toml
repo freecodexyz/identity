@@ -4,4 +4,10 @@ out = "out"
 libs = ["lib"]
 ffi = true
 
+# via-ir is required here, not merely preferred: the legacy pipeline runs out of stack while
+# building the metadata JSON once the optimizer is enabled.
+optimizer = true
+optimizer_runs = 200
+via_ir = true
+
 # See more config options https://github.com/foundry-rs/foundry/blob/master/crates/config/README.md#all-options

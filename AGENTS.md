@@ -16,6 +16,7 @@ These rules apply to Solidity contracts, libraries, interfaces, scripts, and tes
 - Stack: Foundry, Solidity `^0.8.24`, OpenZeppelin Contracts and `forge-std` as git submodules under `lib/`.
 - Core contract: `UIK`, a soulbound ERC-721 "User Identity Key" whose token id is the GitHub account's numeric id.
 - `foundry.toml` sets `ffi = true` because the tests sign JWT fixtures through a Node generator.
+- `foundry.toml` enables the optimizer with `via_ir = true`. Both are load-bearing: the legacy pipeline runs out of stack while building the metadata JSON, so turning via-ir off breaks the build rather than merely changing output.
 
 ## Commands
 
@@ -63,7 +64,7 @@ These rules apply to Solidity contracts, libraries, interfaces, scripts, and tes
 - The ERC-4906 interface id must stay hardcoded as `0x49064906`. `type(IERC4906).interfaceId` is zero, because the ERC declares only events.
 - `tokenURI` is a view function and reaches a renderer through a staticcall. A renderer must be treated as untrusted: no code, a revert, gas exhaustion, and state writes all have to fall back to the built-in renderer rather than propagate.
 - Renderer authority is display-only. It must never be able to mint, move, or unbind an identity. `freezeRenderer` gives it up permanently and deliberately leaves the attestation source mutable, because the pinned workflow still has to be rotatable.
-- `_defaultTokenURI` builds its JSON in two halves on purpose. A single long `string.concat` exhausts the stack when the optimizer is enabled without via-ir.
+- `_defaultTokenURI` builds its JSON in two halves on purpose, and the build depends on `via_ir`. Long `string.concat` chains are the stack pressure here; adding to one is what will break the build first.
 
 ## Solidity code rules
 
