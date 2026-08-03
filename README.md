@@ -124,6 +124,10 @@ JOB_WORKFLOW_REF="freecodexyz/identity/.github/workflows/register.yml@refs/heads
   forge script script/DeployUIK.s.sol --rpc-url "$RPC_URL" --broadcast
 ```
 
+## Reporting a problem
+
+This repository takes bug reports and security reports only. **Security vulnerabilities go privately to [paoloanzn@gmail.com](mailto:paoloanzn@gmail.com) — never through an issue or a pull request.** See [CONTRIBUTING.md](./CONTRIBUTING.md), which also explains why a bug report's title must not begin with `0x`.
+
 ## Keeping the signing keys current
 
 GitHub rotates the RSA keys that sign Actions OIDC tokens. The verifier only accepts a token signed by a key it already holds, so a rotation nobody mirrors makes registration start failing with `UnknownKid` — quietly, with no other symptom.
