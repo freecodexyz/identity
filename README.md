@@ -102,4 +102,16 @@ JOB_WORKFLOW_REF="freecodexyz/identity/.github/workflows/register.yml@refs/heads
   forge script script/DeployUIK.s.sol --rpc-url "$RPC_URL" --broadcast
 ```
 
-The verifier owner then mirrors GitHub's active signing keys with `addKey`, and rotates them with `revokeKey` as GitHub rotates its JWKS.
+## Keeping the signing keys current
+
+GitHub rotates the RSA keys that sign Actions OIDC tokens. The verifier only accepts a token signed by a key it already holds, so a rotation nobody mirrors makes registration start failing with `UnknownKid` — quietly, with no other symptom.
+
+`.github/workflows/sync-github-keys.yml` runs every six hours and keeps the two in step. It adds keys the contract is missing, refreshes any whose material changed, and revokes keys GitHub has dropped. The run is idempotent: when nothing has changed it sends no transactions at all.
+
+The same logic runs locally against any RPC, which is the easiest way to preview a rotation:
+
+```shell
+VERIFIER_ADDRESS=0x... RPC_URL=... DRY_RUN=true ./sync-github-keys.sh
+```
+
+Set `FCF_VERIFIER_ADDRESS`, `FCF_RPC_URL` and `FCF_VERIFIER_FROM_BLOCK` as repository variables, and the verifier owner key as the `FCF_KEY_SYNC_PRIVATE_KEY` secret. That key can add signing keys and therefore mint trust in any JWT, so it should be dedicated to this job and hold nothing else.

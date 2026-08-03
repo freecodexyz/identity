@@ -1,0 +1,58 @@
+name: Sync GitHub Signing Keys
+
+# GitHub rotates the RSA keys that sign Actions OIDC tokens. GithubOidcVerifier only accepts a token
+# signed by a key it already holds, so a rotation that nobody mirrors makes every registration start
+# failing with UnknownKid, quietly and with no other symptom. This job keeps the two in step.
+#
+# The run is idempotent: it only sends a transaction when the published key set and the on-chain one
+# actually differ, so the usual outcome is a few eth_call reads and no gas.
+#
+# Note that GitHub disables scheduled workflows after 60 days without repository activity. If
+# registrations ever start failing on UnknownKid, check that this schedule is still enabled.
+on:
+  schedule:
+    # Off the hour, because scheduled runs at :00 are the most contended and most delayed.
+    - cron: "17 */6 * * *"
+  workflow_dispatch:
+    inputs:
+      dry-run:
+        description: Report the plan without sending transactions
+        type: boolean
+        default: false
+      revoke-stale:
+        description: Revoke keys GitHub no longer publishes
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+
+# Two overlapping runs would each read the same pre-state and send the same transactions.
+concurrency:
+  group: sync-github-keys
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    name: Mirror the JWKS on-chain
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+
+      - name: Install Foundry
+        uses: foundry-rs/foundry-toolchain@v1
+
+      - name: Sync keys
+        env:
+          VERIFIER_ADDRESS: ${{ vars.FCF_VERIFIER_ADDRESS }}
+          RPC_URL: ${{ vars.FCF_RPC_URL }}
+          # Owner of the verifier. This key can add signing keys, so it can mint trust in arbitrary
+          # JWTs; keep it dedicated to this job and hold nothing else with it.
+          PRIVATE_KEY: ${{ secrets.FCF_KEY_SYNC_PRIVATE_KEY }}
+          # Deployment block of the verifier. Only used to bound the KeyAdded log scan.
+          FROM_BLOCK: ${{ vars.FCF_VERIFIER_FROM_BLOCK }}
+          DRY_RUN: ${{ inputs.dry-run && 'true' || 'false' }}
+          REVOKE_STALE: ${{ github.event_name == 'workflow_dispatch' && !inputs.revoke-stale && 'false' || 'true' }}
+        run: ./sync-github-keys.sh

@@ -260,18 +260,23 @@ contract UIKMetadata_T is OidcFixture {
         assertEq(vm.parseJsonString(json, ".image"), "https://avatars.githubusercontent.com/u/583231");
     }
 
-    /// forge-config: default.fuzz.runs = 8
+    /// forge-config: default.fuzz.runs = 48
     function testFuzz_TokenUriIsAlwaysValidJson(uint64 userId, uint64 boundAt) public {
         vm.assume(userId != 0);
-        boundAt = uint64(bound(uint256(boundAt), 1, type(uint32).max));
 
-        vm.warp(boundAt);
         Fixture memory f = _fixture("sample-jwt.json", uint256(userId), alice, ATTESTATION_REPO_ID);
         verifier.addKey(f.kid, f.modulus, f.exponent);
+
+        // Bound against the fixture's own window rather than a fixed ceiling. Anything past `exp`
+        // is just an expired proof, which says nothing about how metadata renders.
+        uint256 timestamp = bound(uint256(boundAt), f.nbf + 1, f.exp);
+        vm.warp(timestamp);
+
         uik.register(f.kid, f.headerB64, f.payloadB64, f.signature, uint256(userId), alice, f.login);
 
         string memory json = _decodeTokenURI(uik.tokenURI(uint256(userId)));
         assertEq(vm.parseJsonString(json, ".trait_github_user_id"), vm.toString(uint256(userId)));
+        assertEq(vm.parseJsonString(json, ".trait_bound_at"), vm.toString(timestamp));
     }
 
     // --- swappable renderer -------------------------------------------------

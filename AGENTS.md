@@ -28,6 +28,7 @@ These rules apply to Solidity contracts, libraries, interfaces, scripts, and tes
 | Tests | `forge test -vvv` |
 | Gas report | `forge test --gas-report` |
 | Regenerate one fixture by hand | `node test/fixtures/load-fixture.mjs test/fixtures/sample-jwt.json` |
+| Preview a key sync without sending | `VERIFIER_ADDRESS=0x… RPC_URL=… DRY_RUN=true ./sync-github-keys.sh` |
 
 ## Repository Structure
 
@@ -42,7 +43,9 @@ These rules apply to Solidity contracts, libraries, interfaces, scripts, and tes
 - `test/fixtures/decode-token-uri.mjs`: decodes and `JSON.parse`s a token URI for assertions.
 - `test/fixtures/*.json`: one file per scenario; negative cases are data, not code.
 - `.github/workflows/register.yml`: the attestation workflow pinned on-chain by `UIK`.
+- `.github/workflows/sync-github-keys.yml`: scheduled mirror of GitHub's JWKS into the verifier.
 - `.github/workflows/test-contracts.yml`: `forge fmt --check`, `forge build --sizes`, `forge test -vvv`.
+- `sync-github-keys.sh`: the key sync itself, driven by `cast`. Runnable locally against anvil.
 - `script/`: Foundry deploy scripts.
 - `lib/`: git submodules. Do not edit directly.
 
@@ -55,7 +58,13 @@ These rules apply to Solidity contracts, libraries, interfaces, scripts, and tes
 - `register` is intentionally permissionless. The proof names its own beneficiary, so a relayer can pay the gas without being able to redirect the identity. Never add an access check that ties the mint to `msg.sender`.
 - `JsonClaim` is sound only because a JSON encoder escapes `"` inside string values. Any change to the matching strategy must preserve that, and must keep the injection regression tests passing.
 - `JsonClaim.indexOf` is inline assembly comparing a masked 32-byte word per position. It deliberately reads up to 31 bytes past the end of both arrays and masks them off, and it never writes; do not add the `memory-safe` annotation on the strength of that. It dominates `register` gas, so verify any edit differentially against the naive byte-at-a-time search before trusting it.
-- GitHub JWKS `kid` values are stored on-chain as `keccak256(bytes(kid))`; keep the off-chain key sync aligned with that.
+- GitHub JWKS `kid` values are stored on-chain as `keccak256(bytes(kid))` of the UTF-8 bytes; keep `sync-github-keys.sh` aligned with that.
+- The verifier owner key used by the key sync is the highest-value secret in the system. It can add an arbitrary signing key, and therefore mint trust in a forged JWT for any account. Keep it dedicated to that job, and prefer a keeper role over the full owner if the contract ever gains one.
+- The key sync must only ever follow `jwks_uri` back to the issuer's own origin. A tampered discovery document could otherwise redirect it to attacker-controlled keys.
+- `MIN_KEYS` exists so a truncated or partial JWKS response cannot revoke the whole registry. Do not remove that floor to make a run succeed.
+- Revoking a key GitHub has just dropped can reject an OIDC token that is still inside its validity window. That is acceptable because tokens are short-lived and a user can simply open another issue, but it is why revocation is switchable.
+- The registry is not enumerable, so reconciliation reconstructs the set of known kids from `KeyAdded` logs. Adding a getter for that set would be a contract change; do not assume one exists.
+- Any workflow in this repository that opens an issue also triggers `register.yml`. The parse step classifies a non-address title as `skip`, so it is harmless, but keep that in mind before adding issue-opening automation.
 - `UIK` is soulbound. The only way a token moves is a fresh OIDC proof through `_bind`. Do not add a holder-initiated transfer path.
 - `.github/workflows/register.yml` is pinned on-chain through `job_workflow_ref`. Renaming the file, moving it, or changing its ref requires an owner transaction on the deployed `UIK`. Treat edits to it as a protocol change.
 - The issue title is untrusted input. Never interpolate `${{ github.event.issue.title }}` into a `run:` block; pass it through `env:` and validate it.
