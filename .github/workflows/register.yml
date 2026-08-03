@@ -1,0 +1,125 @@
+name: Register Identity
+
+# `issues` is the only trigger that runs in THIS repository's context while setting `actor_id` to
+# the external account that acted. That is what lets someone prove their GitHub identity without
+# installing an app, granting a scope, or touching a repository of their own.
+#
+# Do not add another trigger. The UIK contract pins `event_name` to `issues`, so tokens minted by
+# any other event are rejected on-chain, and `types: [opened]` keeps the title that was validated
+# here the same title the issue was created with.
+on:
+  issues:
+    types: [opened]
+
+# `id-token: write` mints the OIDC proof. `issues: write` is only used to report the outcome back.
+# `contents` is deliberately absent: nothing in this job reads the repository.
+permissions:
+  id-token: write
+  issues: write
+
+# Anyone on the internet can open an issue here, so serialise per requester.
+concurrency:
+  group: register-${{ github.actor }}
+  cancel-in-progress: false
+
+jobs:
+  register:
+    name: Prove and register
+    runs-on: ubuntu-latest
+    steps:
+      - name: Parse requested wallet
+        id: parse
+        env:
+          # UNTRUSTED INPUT. Read through the environment and never interpolated into the script
+          # body: `${{ github.event.issue.title }}` inside a `run:` block is the standard GitHub
+          # Actions script-injection sink.
+          ISSUE_TITLE: ${{ github.event.issue.title }}
+        run: |
+          set -euo pipefail
+
+          candidate="$(printf '%s' "$ISSUE_TITLE" | tr -d '[:space:]' | tr '[:upper:]' '[:lower:]')"
+
+          case "$candidate" in
+            0x*)
+              # The contract compares `aud` against `Strings.toHexString`, which is lowercase.
+              if printf '%s' "$candidate" | grep -Eq '^0x[0-9a-f]{40}$'; then
+                echo "status=ok" >> "$GITHUB_OUTPUT"
+                echo "wallet=$candidate" >> "$GITHUB_OUTPUT"
+              else
+                echo "status=invalid" >> "$GITHUB_OUTPUT"
+              fi
+              ;;
+            *)
+              # Not an attempt at a registration; leave ordinary issues alone.
+              echo "status=skip" >> "$GITHUB_OUTPUT"
+              ;;
+          esac
+
+      - name: Prove identity and submit to relayer
+        id: register
+        if: steps.parse.outputs.status == 'ok'
+        env:
+          WALLET: ${{ steps.parse.outputs.wallet }}
+          RELAYER_URL: ${{ vars.FCF_RELAYER_URL }}
+        run: |
+          set -euo pipefail
+
+          if [ -z "${RELAYER_URL:-}" ]; then
+            echo "::error::FCF_RELAYER_URL repository variable is not set."
+            exit 1
+          fi
+
+          # `audience` binds the proof to the requested wallet. GitHub signs it, so the relayer can
+          # pay the gas but cannot redirect the identity to any other address.
+          separator='?'
+          case "$ACTIONS_ID_TOKEN_REQUEST_URL" in
+            *\?*) separator='&' ;;
+          esac
+
+          jwt="$(curl -sS --fail \
+            -H "authorization: bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" \
+            "${ACTIONS_ID_TOKEN_REQUEST_URL}${separator}audience=${WALLET}" \
+            | jq -r '.value')"
+
+          if [ -z "$jwt" ] || [ "$jwt" = "null" ]; then
+            echo "::error::GitHub did not return an OIDC token."
+            exit 1
+          fi
+
+          # Short-lived and bound to WALLET, but still keep it out of the log.
+          echo "::add-mask::$jwt"
+
+          # The proof is self-contained: the relayer needs nothing else and holds no authority over
+          # the outcome. Anyone could broadcast this same proof.
+          response="$(curl -sS --fail -X POST "$RELAYER_URL" \
+            -H 'content-type: application/json' \
+            --data "$(jq -nc --arg jwt "$jwt" --arg wallet "$WALLET" '{jwt: $jwt, wallet: $wallet}')")"
+
+          echo "txHash=$(printf '%s' "$response" | jq -r '.txHash // empty')" >> "$GITHUB_OUTPUT"
+
+      - name: Report outcome
+        if: always() && steps.parse.outputs.status != 'skip'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ISSUE_NUMBER: ${{ github.event.issue.number }}
+          PARSE_STATUS: ${{ steps.parse.outputs.status }}
+          REGISTER_OUTCOME: ${{ steps.register.outcome }}
+          WALLET: ${{ steps.parse.outputs.wallet }}
+          TX_HASH: ${{ steps.register.outputs.txHash }}
+        run: |
+          set -euo pipefail
+
+          if [ "$PARSE_STATUS" = "invalid" ]; then
+            body="The issue title must be a single \`0x\`-prefixed 20-byte address and nothing else."
+          elif [ "$REGISTER_OUTCOME" = "success" ]; then
+            body="Registered \`${WALLET}\`."
+            if [ -n "${TX_HASH:-}" ]; then
+              body="${body}"$'\n\n'"Transaction: \`${TX_HASH}\`"
+            fi
+            body="${body}"$'\n\n'"Opening another issue with a different address rebinds this identity."
+          else
+            body="Registration failed. See the workflow run for details, then open a new issue to retry."
+          fi
+
+          gh issue comment "$ISSUE_NUMBER" -R "$GITHUB_REPOSITORY" --body "$body"
+          gh issue close "$ISSUE_NUMBER" -R "$GITHUB_REPOSITORY"
