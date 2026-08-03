@@ -18,24 +18,58 @@ library JsonClaim {
 
     /**
      * @dev Returns the index of the first occurrence of `needle` in `hay`, or `-1` when absent.
+     *
+     * Still the naive O(n*m) search, but comparing 32 bytes per step instead of one. Every
+     * candidate position is rejected by a single masked word comparison, and the remaining words
+     * are only touched once that first one matches, which for a JWT payload is almost never.
+     *
+     * The loads deliberately read up to 31 bytes past the end of `hay` and `needle`. Those bytes
+     * are always masked off before comparison, so they cannot affect the result; memory beyond a
+     * `bytes` array is readable, and this routine never writes.
      */
     function indexOf(bytes memory hay, bytes memory needle) internal pure returns (int256) {
-        if (needle.length == 0 || hay.length < needle.length) return -1;
+        uint256 hayLen = hay.length;
+        uint256 needleLen = needle.length;
+        if (needleLen == 0 || hayLen < needleLen) return -1;
 
-        // this is O(n*m) decent enough
-        for (uint256 i = 0; i <= hay.length - needle.length; i++) {
-            bool match_ = true;
-            for (uint256 j = 0; j < needle.length; j++) {
-                if (hay[i + j] != needle[j]) {
-                    match_ = false;
-                    break;
+        int256 result = -1;
+
+        assembly {
+            let hayPtr := add(hay, 0x20)
+            let needlePtr := add(needle, 0x20)
+
+            // Selects the leading min(needleLen, 32) bytes of a word.
+            let head := needleLen
+            if gt(head, 0x20) { head := 0x20 }
+            let mask := not(0)
+            if lt(head, 0x20) { mask := shl(shl(3, sub(0x20, head)), not(0)) }
+
+            let firstWord := and(mload(needlePtr), mask)
+            let last := add(hayPtr, sub(hayLen, needleLen))
+
+            for { let p := hayPtr } iszero(gt(p, last)) { p := add(p, 1) } {
+                if eq(and(mload(p), mask), firstWord) {
+                    let matched := 1
+                    for { let off := 0x20 } lt(off, needleLen) { off := add(off, 0x20) } {
+                        let rem := sub(needleLen, off)
+                        let tailMask := not(0)
+                        if lt(rem, 0x20) { tailMask := shl(shl(3, sub(0x20, rem)), not(0)) }
+
+                        if iszero(eq(and(mload(add(p, off)), tailMask), and(mload(add(needlePtr, off)), tailMask))) {
+                            matched := 0
+                            break
+                        }
+                    }
+
+                    if matched {
+                        result := sub(p, hayPtr)
+                        break
+                    }
                 }
             }
-            // safe to cast uint256 -> int256
-            // forge-lint: disable-next-line(unsafe-typecast)
-            if (match_) return int256(i);
         }
-        return -1;
+
+        return result;
     }
 
     /**

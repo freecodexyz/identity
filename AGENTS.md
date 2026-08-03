@@ -54,6 +54,7 @@ These rules apply to Solidity contracts, libraries, interfaces, scripts, and tes
 - `aud` is compared against `Strings.toHexString` of the wallet, so the attestation workflow must request a lowercase hex address as the audience.
 - `register` is intentionally permissionless. The proof names its own beneficiary, so a relayer can pay the gas without being able to redirect the identity. Never add an access check that ties the mint to `msg.sender`.
 - `JsonClaim` is sound only because a JSON encoder escapes `"` inside string values. Any change to the matching strategy must preserve that, and must keep the injection regression tests passing.
+- `JsonClaim.indexOf` is inline assembly comparing a masked 32-byte word per position. It deliberately reads up to 31 bytes past the end of both arrays and masks them off, and it never writes; do not add the `memory-safe` annotation on the strength of that. It dominates `register` gas, so verify any edit differentially against the naive byte-at-a-time search before trusting it.
 - GitHub JWKS `kid` values are stored on-chain as `keccak256(bytes(kid))`; keep the off-chain key sync aligned with that.
 - `UIK` is soulbound. The only way a token moves is a fresh OIDC proof through `_bind`. Do not add a holder-initiated transfer path.
 - `.github/workflows/register.yml` is pinned on-chain through `job_workflow_ref`. Renaming the file, moving it, or changing its ref requires an owner transaction on the deployed `UIK`. Treat edits to it as a protocol change.
