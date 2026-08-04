@@ -26,3 +26,6 @@ broadcast/
 
 # Written by bin/identity; holds local endpoints and addresses.
 .identity.yml
+
+# Operational notes: deployment, key rotation, secrets. Never committed.
+private/
