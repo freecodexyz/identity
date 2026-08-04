@@ -24,7 +24,7 @@ Whatever you have. The more of this the better:
 Covered by this policy:
 
 - `src/` — the contracts, including anything that lets a proof bind an identity to the wrong wallet, lets the claim matcher be bypassed, lets the verifier accept a JWT it should reject, or lets renderer authority reach beyond display
-- `.github/workflows/register.yml` — the attestation workflow pinned on-chain, including anything that changes which account or which address a proof ends up carrying
+- `.github/workflows/register.yml` — the attestation workflow pinned on-chain, including anything that changes which account or which address a proof ends up carrying, or that exposes `FCF_REGISTRAR_PRIVATE_KEY`
 - `.github/workflows/sync-github-keys.yml` and `sync-github-keys.sh` — anything that could get a signing key GitHub does not publish into the verifier, or remove one it does
 - `bin/identity` and `tools/` — anything that leaks the deployer key or misdirects a deployment
 

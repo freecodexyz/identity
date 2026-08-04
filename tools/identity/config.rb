@@ -18,7 +18,6 @@ module Identity
       deployed_at
       attestation_repo_id
       job_workflow_ref
-      relayer_url
     ].freeze
 
     attr_accessor(*FIELDS)

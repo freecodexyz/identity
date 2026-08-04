@@ -55,22 +55,32 @@ jobs:
               ;;
           esac
 
-      - name: Prove identity and submit to relayer
+      - name: Install Foundry
+        if: steps.parse.outputs.status == 'ok'
+        uses: foundry-rs/foundry-toolchain@v1
+
+      - name: Prove identity and register
         id: register
         if: steps.parse.outputs.status == 'ok'
         env:
           WALLET: ${{ steps.parse.outputs.wallet }}
-          RELAYER_URL: ${{ vars.FCF_RELAYER_URL }}
+          UIK_ADDRESS: ${{ vars.FCF_UIK_ADDRESS }}
+          RPC_URL: ${{ vars.FCF_RPC_URL }}
+          # Pays gas and nothing else. `register` is permissionless, so this key carries no
+          # authority over the registry: draining it costs gas, never an identity.
+          PRIVATE_KEY: ${{ secrets.FCF_REGISTRAR_PRIVATE_KEY }}
         run: |
           set -euo pipefail
 
-          if [ -z "${RELAYER_URL:-}" ]; then
-            echo "::error::FCF_RELAYER_URL repository variable is not set."
-            exit 1
-          fi
+          for required in UIK_ADDRESS RPC_URL PRIVATE_KEY; do
+            if [ -z "${!required:-}" ]; then
+              echo "::error::$required is not configured."
+              exit 1
+            fi
+          done
 
-          # `audience` binds the proof to the requested wallet. GitHub signs it, so the relayer can
-          # pay the gas but cannot redirect the identity to any other address.
+          # `audience` binds the proof to the requested wallet. GitHub signs it, so the transaction
+          # can only ever mint to the address this issue asked for.
           separator='?'
           case "$ACTIONS_ID_TOKEN_REQUEST_URL" in
             *\?*) separator='&' ;;
@@ -89,13 +99,59 @@ jobs:
           # Short-lived and bound to WALLET, but still keep it out of the log.
           echo "::add-mask::$jwt"
 
-          # The proof is self-contained: the relayer needs nothing else and holds no authority over
-          # the outcome. Anyone could broadcast this same proof.
-          response="$(curl -sS --fail -X POST "$RELAYER_URL" \
-            -H 'content-type: application/json' \
-            --data "$(jq -nc --arg jwt "$jwt" --arg wallet "$WALLET" '{jwt: $jwt, wallet: $wallet}')")"
+          {
+            read -r KID_TEXT
+            read -r HEADER_HEX
+            read -r PAYLOAD_HEX
+            read -r SIGNATURE_HEX
+            read -r ACTOR_ID
+            read -r LOGIN
+          } < <(python3 - "$jwt" <<'PY'
+          import base64, json, sys
 
-          echo "txHash=$(printf '%s' "$response" | jq -r '.txHash // empty')" >> "$GITHUB_OUTPUT"
+          header_b64, payload_b64, signature_b64 = sys.argv[1].split(".")
+
+          def decode(value):
+              return base64.urlsafe_b64decode(value + "=" * (-len(value) % 4))
+
+          header = json.loads(decode(header_b64))
+          payload = json.loads(decode(payload_b64))
+
+          # The contract re-hashes `headerB64 . "." . payloadB64` verbatim to check the signature,
+          # so those two travel as their ASCII bytes rather than decoded.
+          print(header["kid"])
+          print("0x" + header_b64.encode().hex())
+          print("0x" + payload_b64.encode().hex())
+          print("0x" + decode(signature_b64).hex())
+          print(payload["actor_id"])
+          print(payload["actor"])
+          PY
+          )
+
+          ARGS=(
+            "$UIK_ADDRESS"
+            "register(bytes32,bytes,bytes,bytes,uint256,address,string)"
+            # The registry keys signing keys by keccak256 of the kid's UTF-8 bytes, exactly as
+            # sync-github-keys.sh installs them.
+            "$(cast keccak "$KID_TEXT")"
+            "$HEADER_HEX" "$PAYLOAD_HEX" "$SIGNATURE_HEX"
+            "$ACTOR_ID" "$WALLET" "$LOGIN"
+          )
+
+          # Simulate first. A proof that cannot land — already registered, a key not yet synced, an
+          # expired token — then costs nothing instead of a reverted transaction.
+          cast call "${ARGS[@]}" --rpc-url "$RPC_URL" > /dev/null
+
+          receipt="$(cast send "${ARGS[@]}" --rpc-url "$RPC_URL" --private-key "$PRIVATE_KEY" --json)"
+          hash="$(printf '%s' "$receipt" | jq -r '.transactionHash')"
+          status="$(printf '%s' "$receipt" | jq -r '.status')"
+
+          if [ "$status" != "0x1" ]; then
+            echo "::error::registration transaction $hash reverted"
+            exit 1
+          fi
+
+          echo "txHash=$hash" >> "$GITHUB_OUTPUT"
 
       - name: Report outcome
         if: always() && steps.parse.outputs.status != 'skip'

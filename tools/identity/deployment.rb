@@ -16,11 +16,14 @@ module Identity
       "FCF_VERIFIER_ADDRESS" => :verifier,
       "FCF_UIK_ADDRESS" => :uik,
       "FCF_RPC_URL" => :rpc_url,
-      "FCF_VERIFIER_FROM_BLOCK" => :deployed_at,
-      "FCF_RELAYER_URL" => :relayer_url
+      "FCF_VERIFIER_FROM_BLOCK" => :deployed_at
     }.freeze
 
+    # Owns the verifier: it can add signing keys, so it can mint trust in a forged JWT.
     KEY_SYNC_SECRET = "FCF_KEY_SYNC_PRIVATE_KEY"
+    # Pays gas for registrations and nothing else. `register` is permissionless, so this key holds
+    # no authority over the registry.
+    REGISTRAR_SECRET = "FCF_REGISTRAR_PRIVATE_KEY"
 
     def initialize(root: Dir.pwd)
       @root = root
@@ -68,11 +71,10 @@ module Identity
       nil
     end
 
-    def deploy(rpc_url: nil, relayer_url: nil)
+    def deploy(rpc_url: nil)
       Shell.require_tools!("forge", "cast", "gh")
 
       config.rpc_url = rpc_url if rpc_url
-      config.relayer_url = relayer_url if relayer_url
       raise MissingRequirement, "no RPC URL; pass --rpc-url" if config.rpc_url.to_s.empty?
       raise InvalidState, "#{config.rpc_url} is unreachable" unless chain.reachable?
 
@@ -154,9 +156,8 @@ module Identity
       nil
     end
 
-    def configure(relayer_url: nil, key_sync_key: nil, dry_run: false)
+    def configure(key_sync_key: nil, registrar_key: nil, dry_run: false)
       require_deployment!
-      config.relayer_url = relayer_url if relayer_url
 
       UI.note "dry run against #{github.repo.slug}, nothing will be written" if dry_run
 
@@ -172,15 +173,11 @@ module Identity
         UI.ok "#{name} = #{value}"
       end
 
-      key = key_sync_key || ENV.fetch("FCF_KEY_SYNC_PRIVATE_KEY", nil)
       UI.heading "Repository secrets"
-      if key.to_s.empty?
-        UI.warn "#{KEY_SYNC_SECRET} skipped; pass --key-sync-key or set it in the environment"
-        UI.note "This key can add signing keys, so keep it dedicated to the sync job."
-      else
-        github.set_secret(KEY_SYNC_SECRET, key) unless dry_run
-        UI.ok KEY_SYNC_SECRET
-      end
+      write_secret(KEY_SYNC_SECRET, key_sync_key || ENV.fetch(KEY_SYNC_SECRET, nil), dry_run: dry_run,
+                   hint: "--key-sync-key", note: "Owns the verifier. It can add signing keys, so keep it dedicated to the sync job.")
+      write_secret(REGISTRAR_SECRET, registrar_key || ENV.fetch(REGISTRAR_SECRET, nil), dry_run: dry_run,
+                   hint: "--registrar-key", note: "Only pays gas for registrations. Keep it funded, and hold nothing else with it.")
 
       config.save unless dry_run
       nil
@@ -218,6 +215,17 @@ module Identity
 
         raw.start_with?("0x") ? raw : "0x#{raw}"
       end
+    end
+
+    def write_secret(name, value, dry_run:, hint:, note:)
+      if value.to_s.empty?
+        UI.warn "#{name} skipped; pass #{hint} or set it in the environment"
+        UI.note note
+        return
+      end
+
+      github.set_secret(name, value) unless dry_run
+      UI.ok name
     end
 
     def require_deployment!

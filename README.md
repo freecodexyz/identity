@@ -46,7 +46,7 @@ The `issues` event is the key. It runs in **this** repository's context while se
 
 The address comes from the **issue title**, which is publicly and permanently attributable to the account that opened it. No backend chooses it, and none can substitute it. Changing the pinned workflow requires an owner transaction against the deployed contract, so the code that mints identities cannot be swapped silently.
 
-Because the proof names its own beneficiary through `aud`, `register` is permissionless: a relayer can pay the gas without being able to redirect the identity, and anyone can broadcast a proof they hold.
+Because the proof names its own beneficiary through `aud`, `register` is permissionless. The attestation workflow submits the transaction itself and pays the gas, using a key that holds no authority over the registry: drain it and you have cost someone gas, never an identity. Anyone else holding the same proof could broadcast it to exactly the same effect.
 
 ## Metadata
 
@@ -104,7 +104,9 @@ Tests sign real RSA JWTs through `test/fixtures/load-fixture.mjs` under `vm.ffi`
 ./bin/identity doctor                          # tooling, credentials, current state
 ./bin/identity deploy --rpc-url "$RPC_URL"     # verifier, then UIK, wired together
 ./bin/identity configure --dry-run             # preview the repository variables
-./bin/identity configure                       # write them, plus the key sync secret
+./bin/identity configure \
+  --key-sync-key "$OWNER_KEY" \
+  --registrar-key "$GAS_KEY"                   # write the variables and both secrets
 ./bin/identity keys sync                       # mirror GitHub's signing keys
 ./bin/identity status                          # verify it all lines up
 ```
@@ -142,4 +144,11 @@ The same logic runs locally against any RPC, which is the easiest way to preview
 VERIFIER_ADDRESS=0x... RPC_URL=... DRY_RUN=true ./sync-github-keys.sh
 ```
 
-Set `FCF_VERIFIER_ADDRESS`, `FCF_RPC_URL` and `FCF_VERIFIER_FROM_BLOCK` as repository variables, and the verifier owner key as the `FCF_KEY_SYNC_PRIVATE_KEY` secret. That key can add signing keys and therefore mint trust in any JWT, so it should be dedicated to this job and hold nothing else.
+`identity configure` sets everything the two workflows need. Two secrets live here and they are not interchangeable:
+
+| Secret | Authority | Blast radius |
+| --- | --- | --- |
+| `FCF_KEY_SYNC_PRIVATE_KEY` | verifier owner | can add signing keys, so it can mint trust in a forged JWT |
+| `FCF_REGISTRAR_PRIVATE_KEY` | none | pays gas for registrations; draining it costs money, never an identity |
+
+Keep them as separate keys.

@@ -20,8 +20,8 @@ module Identity
 
       Options:
         --rpc-url URL              RPC endpoint (deploy; remembered afterwards)
-        --relayer-url URL          relayer endpoint published to the workflow
-        --key-sync-key KEY         private key stored as the key sync secret
+        --key-sync-key KEY         verifier owner key, stored as the key sync secret
+        --registrar-key KEY        gas-paying key, stored as the registrar secret
         --dry-run                  report the plan without writing anything (configure, keys sync)
         --no-revoke                keep keys GitHub no longer publishes (keys sync)
         -h, --help                 this message
@@ -66,8 +66,8 @@ module Identity
     def parser
       OptionParser.new do |o|
         o.on("--rpc-url URL") { |value| options[:rpc_url] = value }
-        o.on("--relayer-url URL") { |value| options[:relayer_url] = value }
         o.on("--key-sync-key KEY") { |value| options[:key_sync_key] = value }
+        o.on("--registrar-key KEY") { |value| options[:registrar_key] = value }
         o.on("--dry-run") { options[:dry_run] = true }
         o.on("--no-revoke") { options[:revoke_stale] = false }
         o.on("-h", "--help") do
@@ -86,10 +86,10 @@ module Identity
 
       case command
       when "doctor" then deployment.doctor
-      when "deploy" then deployment.deploy(rpc_url: options[:rpc_url], relayer_url: options[:relayer_url])
+      when "deploy" then deployment.deploy(rpc_url: options[:rpc_url])
       when "status" then deployment.status
       when "configure"
-        deployment.configure(relayer_url: options[:relayer_url], key_sync_key: options[:key_sync_key],
+        deployment.configure(key_sync_key: options[:key_sync_key], registrar_key: options[:registrar_key],
                              dry_run: options[:dry_run])
       when "keys" then keys(deployment)
       else
