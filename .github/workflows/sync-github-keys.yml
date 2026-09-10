@@ -34,7 +34,13 @@ concurrency:
 
 jobs:
   sync:
-    name: Mirror the JWKS on-chain
+    name: Mirror JWKS on ${{ matrix.chain.name }}
+    strategy:
+      fail-fast: false
+      matrix:
+        chain:
+          - { name: Base, id: 8453, prefix: "" }
+          - { name: Robinhood, id: 4663, prefix: "ROBINHOOD_" }
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
@@ -55,13 +61,14 @@ jobs:
 
       - name: Sync keys
         env:
-          VERIFIER_ADDRESS: ${{ vars.FCF_VERIFIER_ADDRESS }}
-          RPC_URL: ${{ vars.FCF_RPC_URL }}
+          EXPECTED_CHAIN_ID: ${{ matrix.chain.id }}
+          VERIFIER_ADDRESS: ${{ vars[format('FCF_{0}VERIFIER_ADDRESS', matrix.chain.prefix)] }}
+          RPC_URL: ${{ vars[format('FCF_{0}RPC_URL', matrix.chain.prefix)] }}
           # Owner of the verifier. This key can add signing keys, so it can mint trust in arbitrary
           # JWTs; keep it dedicated to this job and hold nothing else with it.
-          PRIVATE_KEY: ${{ secrets.FCF_KEY_SYNC_PRIVATE_KEY }}
+          PRIVATE_KEY: ${{ secrets[format('FCF_{0}KEY_SYNC_PRIVATE_KEY', matrix.chain.prefix)] }}
           # Deployment block of the verifier. Only used to bound the KeyAdded log scan.
-          FROM_BLOCK: ${{ vars.FCF_VERIFIER_FROM_BLOCK }}
+          FROM_BLOCK: ${{ vars[format('FCF_{0}VERIFIER_FROM_BLOCK', matrix.chain.prefix)] }}
           DRY_RUN: ${{ inputs.dry-run && 'true' || 'false' }}
           REVOKE_STALE: ${{ github.event_name == 'workflow_dispatch' && !inputs.revoke-stale && 'false' || 'true' }}
         run: ./sync-github-keys.sh

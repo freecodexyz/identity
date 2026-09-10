@@ -40,6 +40,12 @@ if [[ "$DRY_RUN" != "true" ]]; then
   [[ -n "${PRIVATE_KEY:-}" ]] || fail "PRIVATE_KEY is not set (or set DRY_RUN=true)"
 fi
 
+# Refuse a misconfigured endpoint before reading or changing signing keys.
+if [[ -n "${EXPECTED_CHAIN_ID:-}" ]]; then
+  actual_chain="$(cast chain-id --rpc-url "$RPC_URL")" || fail "could not read RPC chain id"
+  [[ "$actual_chain" == "$EXPECTED_CHAIN_ID" ]] || fail "RPC serves chain $actual_chain, expected $EXPECTED_CHAIN_ID"
+fi
+
 # --- discovery ---------------------------------------------------------------
 
 config="$(curl -fsS --max-time 30 "${ISSUER}/.well-known/openid-configuration")" ||

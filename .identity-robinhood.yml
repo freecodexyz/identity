@@ -1,0 +1,7 @@
+# Written by bin/identity. Safe to commit only if the endpoints are public.
+rpc_url: https://rpc.mainnet.chain.robinhood.com
+chain_id: 4663
+verifier: '0xf696da98df236a36536e9385daf05d196579612b'
+deployed_at: 59654577
+attestation_repo_id: 1321962321
+job_workflow_ref: freecodexyz/identity/.github/workflows/register.yml@refs/heads/main

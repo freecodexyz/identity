@@ -95,3 +95,9 @@ forge test -vvv
 ```
 
 Tests sign real RSA JWTs through `test/fixtures/load-fixture.mjs` under `vm.ffi`, so Node is required. Every negative case is a JSON fixture rather than a hand-crafted token.
+
+Use `--config .identity-robinhood.yml --chain-id 4663` on each command to keep Robinhood's
+record separate from the default Base record. `configure` uses `FCF_ROBINHOOD_` variables and
+secrets for Robinhood and preserves the existing Base names.
+Use `deploy --verifier-only` when the chain needs the verifier without a UIK. Key syncing runs
+independently on Base and Robinhood, so a failure on one chain does not stop the other.

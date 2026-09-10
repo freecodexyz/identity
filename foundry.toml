@@ -4,6 +4,10 @@ out = "out"
 libs = ["lib"]
 ffi = true
 
+# Keep deployment bytecode reproducible and compatible with both mainnet EVMs.
+solc = "0.8.35"
+evm_version = "cancun"
+
 # via-ir is required here, not merely preferred: the legacy pipeline runs out of stack while
 # building the metadata JSON once the optimizer is enabled.
 optimizer = true

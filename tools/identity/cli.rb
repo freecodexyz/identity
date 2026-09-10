@@ -19,6 +19,9 @@ module Identity
         keys sync                  mirror GitHub's signing keys into the verifier
 
       Options:
+        --config FILE              deployment record (default: #{Config::FILENAME})
+        --chain-id ID              refuse to act on any other chain
+        --verifier-only             deploy only the verifier, without a UIK
         --rpc-url URL              RPC endpoint (deploy; remembered afterwards)
         --key-sync-key KEY         verifier owner key, stored as the key sync secret
         --registrar-key KEY        gas-paying key, stored as the registrar secret
@@ -65,6 +68,9 @@ module Identity
 
     def parser
       OptionParser.new do |o|
+        o.on("--config FILE") { |value| options[:config_file] = value }
+        o.on("--chain-id ID", Integer) { |value| options[:chain_id] = value }
+        o.on("--verifier-only") { options[:verifier_only] = true }
         o.on("--rpc-url URL") { |value| options[:rpc_url] = value }
         o.on("--key-sync-key KEY") { |value| options[:key_sync_key] = value }
         o.on("--registrar-key KEY") { |value| options[:registrar_key] = value }
@@ -82,11 +88,11 @@ module Identity
     end
 
     def dispatch(command)
-      deployment = Deployment.new(root: root)
+      deployment = Deployment.new(root: root, chain_id: options[:chain_id], config_file: options[:config_file])
 
       case command
       when "doctor" then deployment.doctor
-      when "deploy" then deployment.deploy(rpc_url: options[:rpc_url])
+      when "deploy" then deployment.deploy(rpc_url: options[:rpc_url], verifier_only: options[:verifier_only])
       when "status" then deployment.status
       when "configure"
         deployment.configure(key_sync_key: options[:key_sync_key], registrar_key: options[:registrar_key],

@@ -25,10 +25,11 @@ module Identity
     # no authority over the registry.
     REGISTRAR_SECRET = "FCF_REGISTRAR_PRIVATE_KEY"
 
-    def initialize(root: Dir.pwd)
+    def initialize(root: Dir.pwd, chain_id: nil, config_file: nil)
       @root = root
-      @config = Config.load(root)
+      @config = Config.load(root, filename: config_file || Config::FILENAME)
       @github = GitHub.new(root: root)
+      @chain_id_override = chain_id
     end
 
     # --- commands -----------------------------------------------------------
@@ -67,21 +68,23 @@ module Identity
       end
 
       UI.heading "Deployment"
-      config.deployed? ? UI.ok("recorded in #{Config::FILENAME}") : UI.warn("nothing deployed yet")
+      config.deployed? ? UI.ok("recorded in #{config.path}") : UI.warn("nothing deployed yet")
       nil
     end
 
-    def deploy(rpc_url: nil)
+    def deploy(rpc_url: nil, verifier_only: false)
       Shell.require_tools!("forge", "cast", "gh")
 
       config.rpc_url = rpc_url if rpc_url
       raise MissingRequirement, "no RPC URL; pass --rpc-url" if config.rpc_url.to_s.empty?
       raise InvalidState, "#{config.rpc_url} is unreachable" unless chain.reachable?
 
+      require_expected_chain!
       repo = github.repo
       deployer = chain.address_of(private_key)
 
       UI.heading "Plan"
+      UI.field "contracts", verifier_only ? "GithubOidcVerifier" : "GithubOidcVerifier, UIK"
       UI.field "chain", chain.chain_id
       UI.field "deployer", deployer
       UI.field "balance", "#{chain.balance_eth(deployer)} ETH"
@@ -96,31 +99,34 @@ module Identity
                                  "GithubOidcVerifier")
       UI.ok "#{verifier.address} (block #{verifier.block})"
 
-      UI.step "UIK"
-      uik = expect_contract(
-        chain.run_script(
-          UIK_SCRIPT,
-          env: {
-            "JWT_VERIFIER_ADDRESS" => verifier.address,
-            "ATTESTATION_REPO_ID" => repo.database_id,
-            "JOB_WORKFLOW_REF" => repo.job_workflow_ref
-          },
-          private_key: private_key
-        ),
-        "UIK"
-      )
-      UI.ok "#{uik.address} (block #{uik.block})"
+      uik = nil
+      unless verifier_only
+        UI.step "UIK"
+        uik = expect_contract(
+          chain.run_script(
+            UIK_SCRIPT,
+            env: {
+              "JWT_VERIFIER_ADDRESS" => verifier.address,
+              "ATTESTATION_REPO_ID" => repo.database_id,
+              "JOB_WORKFLOW_REF" => repo.job_workflow_ref
+            },
+            private_key: private_key
+          ),
+          "UIK"
+        )
+        UI.ok "#{uik.address} (block #{uik.block})"
+      end
 
       config.chain_id = chain.chain_id
       config.verifier = verifier.address
-      config.uik = uik.address
+      config.uik = uik&.address
       config.deployed_at = verifier.block
       config.attestation_repo_id = repo.database_id
       config.job_workflow_ref = repo.job_workflow_ref
       config.save
 
       UI.heading "Saved"
-      UI.note "#{Config::FILENAME} updated. Next: identity configure, then identity keys sync."
+      UI.note "#{config.path} updated. Next: identity configure, then identity keys sync."
       nil
     end
 
@@ -140,16 +146,19 @@ module Identity
         return
       end
 
+      require_expected_chain!
       UI.field "verifier owner", chain.call(config.verifier, "owner()(address)")
-      UI.field "uik owner", chain.call(config.uik, "owner()(address)")
-      UI.field "renderer", renderer_description
-      UI.field "renderer frozen", chain.call(config.uik, "rendererFrozen()(bool)")
+      unless config.uik.to_s.empty?
+        UI.field "uik owner", chain.call(config.uik, "owner()(address)")
+        UI.field "renderer", renderer_description
+        UI.field "renderer frozen", chain.call(config.uik, "rendererFrozen()(bool)")
 
-      UI.heading "Attestation source"
-      compare "repository id", chain.call_integer(config.uik, "attestationRepoId()(uint64)"),
-              github.repo.database_id
-      compare "workflow ref", chain.call_string(config.uik, "jobWorkflowRef()(string)"),
-              github.repo.job_workflow_ref
+        UI.heading "Attestation source"
+        compare "repository id", chain.call_integer(config.uik, "attestationRepoId()(uint64)"),
+                github.repo.database_id
+        compare "workflow ref", chain.call_string(config.uik, "jobWorkflowRef()(string)"),
+                github.repo.job_workflow_ref
+      end
 
       UI.heading "Signing keys"
       report_keys
@@ -163,6 +172,7 @@ module Identity
 
       UI.heading "Repository variables"
       VARIABLES.each do |name, field|
+        name = config.github_name(name)
         value = config.public_send(field)
         if value.to_s.empty?
           UI.warn "#{name} skipped, #{field} is unset"
@@ -174,9 +184,11 @@ module Identity
       end
 
       UI.heading "Repository secrets"
-      write_secret(KEY_SYNC_SECRET, key_sync_key || ENV.fetch(KEY_SYNC_SECRET, nil), dry_run: dry_run,
+      key_sync_secret = config.github_name(KEY_SYNC_SECRET)
+      registrar_secret = config.github_name(REGISTRAR_SECRET)
+      write_secret(key_sync_secret, key_sync_key || ENV.fetch(key_sync_secret, nil), dry_run: dry_run,
                    hint: "--key-sync-key", note: "Owns the verifier. It can add signing keys, so keep it dedicated to the sync job.")
-      write_secret(REGISTRAR_SECRET, registrar_key || ENV.fetch(REGISTRAR_SECRET, nil), dry_run: dry_run,
+      write_secret(registrar_secret, registrar_key || ENV.fetch(registrar_secret, nil), dry_run: dry_run,
                    hint: "--registrar-key", note: "Only pays gas for registrations. Keep it funded, and hold nothing else with it.")
 
       config.save unless dry_run
@@ -186,7 +198,9 @@ module Identity
     def sync_keys(dry_run: false, revoke_stale: true)
       require_deployment!
 
+      require_expected_chain!
       env = {
+        "EXPECTED_CHAIN_ID" => config.chain_id,
         "VERIFIER_ADDRESS" => config.verifier,
         "RPC_URL" => config.rpc_url,
         "FROM_BLOCK" => config.deployed_at,
@@ -202,6 +216,14 @@ module Identity
     private
 
     attr_reader :root, :config, :github
+
+    def require_expected_chain!
+      expected = @chain_id_override || config.chain_id
+      actual = chain.chain_id
+      return if expected.nil? || Integer(expected) == actual
+
+      raise InvalidState, "RPC serves chain #{actual}, expected #{expected}"
+    end
 
     def chain
       @chain ||= Chain.new(rpc_url: config.rpc_url, root: root)

@@ -23,8 +23,8 @@ module Identity
     attr_accessor(*FIELDS)
     attr_reader :path
 
-    def self.load(root)
-      path = File.join(root, FILENAME)
+    def self.load(root, filename: FILENAME)
+      path = File.expand_path(filename, root)
       stored = File.exist?(path) ? YAML.safe_load_file(path) || {} : {}
       new(path: path, **stored.transform_keys(&:to_sym).slice(*FIELDS))
     end
@@ -40,7 +40,16 @@ module Identity
     end
 
     def deployed?
-      !verifier.to_s.empty? && !uik.to_s.empty?
+      !verifier.to_s.empty?
+    end
+
+    # Base keeps its existing names; Robinhood has an independent namespace.
+    def github_name(name)
+      case chain_id.to_i
+      when 8453 then name
+      when 4663 then name.sub(/\AFCF_/, "FCF_ROBINHOOD_")
+      else raise InvalidState, "GitHub configuration is unsupported for chain #{chain_id.inspect}"
+      end
     end
 
     def to_h

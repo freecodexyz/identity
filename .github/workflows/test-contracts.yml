@@ -5,6 +5,10 @@ permissions: {}
 on:
   push:
     paths:
+      - "tools/**"
+      - "bin/**"
+      - "sync-github-keys.sh"
+      - ".github/workflows/sync-github-keys.yml"
       - "src/**"
       - "test/**"
       - "script/**"
@@ -13,6 +17,10 @@ on:
       - ".github/workflows/test-contracts.yml"
   pull_request:
     paths:
+      - "tools/**"
+      - "bin/**"
+      - "sync-github-keys.sh"
+      - ".github/workflows/sync-github-keys.yml"
       - "src/**"
       - "test/**"
       - "script/**"
@@ -37,6 +45,15 @@ jobs:
       - uses: actions/setup-node@v6
         with:
           node-version: 24
+
+      - uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: "3.2"
+
+      - name: Check deployment configuration
+        run: |
+          ruby tools/identity/config.test.rb
+          bash -n sync-github-keys.sh
 
       - name: Install Foundry
         uses: foundry-rs/foundry-toolchain@v1
