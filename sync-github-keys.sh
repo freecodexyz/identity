@@ -139,17 +139,22 @@ if [[ "$REVOKE_STALE" == "true" ]]; then
 
   # The registry is not enumerable, so recover every kid it has ever held from its own events.
   known="$(
-    cast logs --address "$VERIFIER_ADDRESS" 'KeyAdded(bytes32)' \
-      --from-block "$FROM_BLOCK" --rpc-url "$RPC_URL" --json |
-      python3 -c '
+    head="$(cast block-number --rpc-url "$RPC_URL")" || exit 1
+    block="$FROM_BLOCK"
+    while (( block <= head )); do
+      # Both ends are inclusive; cap each query at one million blocks.
+      end=$((block + 999999))
+      if (( end > head )); then end="$head"; fi
+
+      cast logs --address "$VERIFIER_ADDRESS" 'KeyAdded(bytes32)' \
+        --from-block "$block" --to-block "$end" --rpc-url "$RPC_URL" --json |
+        python3 -c '
 import json, sys
-seen = []
 for log in json.load(sys.stdin):
-    topic = log["topics"][1]
-    if topic not in seen:
-        seen.append(topic)
-print("\n".join(seen))
-'
+    print(log["topics"][1])
+' || exit 1
+      block=$((end + 1))
+    done | awk 'NF && !seen[$0]++'
   )" || fail "could not read KeyAdded logs"
 
   while read -r kid_hash; do
